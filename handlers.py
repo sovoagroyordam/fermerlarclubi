@@ -14,12 +14,14 @@ from aiogram.types import (
     ReplyKeyboardRemove, 
     InlineKeyboardMarkup, 
     InlineKeyboardButton, 
-    FSInputFile
+    FSInputFile,
+    WebAppInfo
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 
 from config import get_effective_group_id, get_effective_admin_chat_id
+from web_admin import generate_auth_token
 from database import (
     save_response, 
     get_response, 
@@ -262,6 +264,9 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: Comm
         live_enabled = (live_val == "1")
         live_status_badge = "Yoqilgan 🟢" if live_enabled else "O'chirilgan 🔴"
         
+        token = generate_auth_token()
+        webapp_url = f"https://fermerlarclubi.onrender.com/?token={token}"
+        
         admin_text = (
             "👑 <b>Assalomu alaykum, Hurmatli Administrator!</b>\n\n"
             "Siz botning boshqaruvchisisiz. Sizga oddiy foydalanuvchilar kabi anketalar berilmaydi.\n\n"
@@ -269,12 +274,20 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: Comm
             f"📌 <b>Ulangan guruh ID:</b> {group_status}\n\n"
             f"📊 <b>Hozirgi statistika:</b>\n"
             f"• Jami anketalar: <b>{stats['total']} ta</b>\n"
-            f"• Guruhga qo'shilganlar: <b>{stats['group_joins_count']} ta</b>\n"
+            f"• Guruh a'zolari: <b>{stats['group_joins_count']} ta</b>\n"
             f"• Telefon qoldirganlar: <b>{stats['with_phone']} ta</b>\n"
             f"• Ovozli xabarlar: <b>{stats['with_voice']} ta</b>\n\n"
-            "Pastdagi tugmalar orqali statistikani ko'rishingiz yoki jonli xabarlarni yoqib-o'chirishingiz mumkin 👇"
+            "Quyidagi <b>'🚀 Admin Panel'</b> tugmasi orqali barcha ma'lumotlarni to'g'ridan-to'g'ri Telegram ichida ochishingiz mumkin 👇"
         )
-        await message.answer(admin_text, reply_markup=get_admin_main_keyboard(live_enabled), parse_mode="HTML")
+        
+        admin_inline = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Admin Panelni ochish (Mini App)", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton(text="🔄 Statistikani yangilash", callback_data="admin_refresh_stats")],
+            [InlineKeyboardButton(text="👥 Taklif havolasini olish", callback_data="btn_invite_friends")]
+        ])
+        
+        await message.answer(admin_text, reply_markup=get_admin_main_keyboard(live_enabled, webapp_url), parse_mode="HTML")
+        await message.answer("Boshqaruv vositalari:", reply_markup=admin_inline)
         return
 
     # Maxfiy referral kodini tekshirish (masalan: /start c_8f1b2c3d yoki ref_c_8f1b2c3d)
@@ -760,6 +773,9 @@ async def handle_admin_toggle_live_notifications(message: Message):
     new_val = "0" if curr == "1" else "1"
     await set_setting("live_notifications", new_val)
     
+    token = generate_auth_token()
+    webapp_url = f"https://fermerlarclubi.onrender.com/?token={token}"
+    
     if new_val == "1":
         ans = (
             "🔔 <b>Jonli xabarlar YOQILDI!</b>\n\n"
@@ -772,21 +788,28 @@ async def handle_admin_toggle_live_notifications(message: Message):
             "Endi yangi anketalar profilingizga kelmaydi, faqat Web Admin Panel (https://fermerlarclubi.onrender.com) "
             "va Neon bazasiga yozilib boradi."
         )
-    await message.answer(ans, reply_markup=get_admin_main_keyboard(new_val == "1"), parse_mode="HTML")
+    await message.answer(ans, reply_markup=get_admin_main_keyboard(new_val == "1", webapp_url), parse_mode="HTML")
 
 @router.message(F.text == "🌐 Admin Panel (Sayt)")
+@router.message(F.text == "🚀 Admin Panel")
 async def handle_admin_web_link(message: Message):
     admin_chat_id = await get_effective_admin_chat_id()
     if not (admin_chat_id and str(message.from_user.id) == str(admin_chat_id)):
         return
+    token = generate_auth_token()
+    webapp_url = f"https://fermerlarclubi.onrender.com/?token={token}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Admin Panelni ochish (Mini App)", web_app=WebAppInfo(url=webapp_url))]
+    ])
     text = (
         "🌐 <b>Web Admin Panel</b>\n\n"
-        "Barcha anketalarni ko'rish, ovozlarni eshitish va Excel (CSV) yuklab olish uchun quyidagi manzilga kiring:\n\n"
-        "🔗 https://fermerlarclubi.onrender.com\n\n"
+        "Barcha anketalarni ko'rish, ovozlarni eshitish va Excel (CSV) yuklab olish uchun "
+        "quyidagi tugmani bosing (to'g'ridan-to'g'ri Telegram ichida ochiladi):\n\n"
+        f"🔗 <code>{webapp_url}</code>\n\n"
         "👤 <b>Login:</b> <code>admin</code>\n"
         "🔑 <b>Parol:</b> <code>admin777</code>"
     )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 @router.message(F.text == "👥 Taklif havolasi olish")
 async def handle_admin_get_invite_link(message: Message, bot: Bot):
@@ -873,12 +896,15 @@ async def cb_admin_refresh_stats(callback: CallbackQuery):
         f"📌 **Ulangan guruh ID:** {group_status}\n"
         f"🕒 *Oxirgi tekshiruv:* `{time.strftime('%H:%M:%S')}`"
     )
+    token = generate_auth_token()
+    webapp_url = f"https://fermerlarclubi.onrender.com/?token={token}"
     admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Admin Panelni ochish (Mini App)", web_app=WebAppInfo(url=webapp_url))],
         [InlineKeyboardButton(text="🔄 Statistikani yangilash", callback_data="admin_refresh_stats")],
         [InlineKeyboardButton(text="👥 Taklif havolasini olish", callback_data="btn_invite_friends")]
     ])
     try:
-        await callback.message.edit_text(admin_text, reply_markup=admin_kb, parse_mode="Markdown")
+        await callback.message.edit_text(admin_text, reply_markup=admin_kb, parse_mode="HTML")
     except Exception:
         pass
     await callback.answer("Statistika yangilandi! ✅")

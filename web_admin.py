@@ -58,11 +58,24 @@ def generate_auth_token() -> str:
     return hmac.new(SECRET_KEY.encode("utf-8"), msg, hashlib.sha256).hexdigest()
 
 def is_authenticated(request: web.Request) -> bool:
-    cookie_token = request.cookies.get("gh_auth")
-    if not cookie_token:
-        return False
     valid_token = generate_auth_token()
-    return hmac.compare_digest(cookie_token, valid_token)
+    # 1. URL token tekshiruvi (Telegram WebApp / Mini App orqali 1-klikda avto-login)
+    token_in_query = request.query.get("token")
+    if token_in_query and hmac.compare_digest(token_in_query, valid_token):
+        return True
+    
+    # 2. Brauzer Cookie tekshiruvi
+    cookie_token = request.cookies.get("gh_auth")
+    if cookie_token and hmac.compare_digest(cookie_token, valid_token):
+        return True
+    return False
+
+def render_html_response(request: web.Request, html: str) -> web.Response:
+    resp = web.Response(text=html, content_type="text/html")
+    # Agar URLda token bo'lsa, cookie ham o'rnatamiz (keyingi sahifalar /analysis, /members uchun)
+    if request.query.get("token") and is_authenticated(request):
+        resp.set_cookie("gh_auth", generate_auth_token(), max_age=86400 * 30, httponly=True)
+    return resp
 
 # ----------------- LOGIN HTML -----------------
 LOGIN_HTML = """<!DOCTYPE html>
@@ -72,6 +85,12 @@ LOGIN_HTML = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign in to Fermamax</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e) {}
+        }
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -398,6 +417,12 @@ CUSTDEV_HTML = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>fermamax/custdev: Fermerlar Klubi</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e) {}
+        }
+    </script>
     <style>
         """ + COMMON_CSS + """
         .stats-bar {
@@ -582,6 +607,12 @@ ANALYSIS_HTML = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>fermamax/analysis: Muammolar Tahlili</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e) {}
+        }
+    </script>
     <style>
         """ + COMMON_CSS + """
         .grid-2 {
@@ -770,6 +801,12 @@ MEMBERS_HTML = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>fermamax/members: Guruh a'zolari va Takliflar</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        if (window.Telegram && window.Telegram.WebApp) {
+            try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e) {}
+        }
+    </script>
     <style>
         """ + COMMON_CSS + """
         .metric-card {
@@ -1175,7 +1212,7 @@ async def handle_index(request: web.Request):
         .replace("{{group_joins_count}}", str(stats["group_joins_count"]))
         .replace("{{issue_items}}", issue_items)
     )
-    return web.Response(text=html, content_type="text/html")
+    return render_html_response(request, html)
 
 # ----------------- REPO 2 HANDLER: /analysis (MUAMMOLAR TAHLILI) -----------------
 async def handle_analysis(request: web.Request):
@@ -1311,7 +1348,7 @@ async def handle_analysis(request: web.Request):
         .replace("{{parranda_bars}}", parranda_bars_html)
         .replace("{{segment_cards}}", segment_cards_html)
     )
-    return web.Response(text=html, content_type="text/html")
+    return render_html_response(request, html)
 
 # ----------------- REPO 3 HANDLER: /members (GURUH A'ZOLARI & TAKLIFLAR) -----------------
 async def handle_members(request: web.Request):
@@ -1389,7 +1426,7 @@ async def handle_members(request: web.Request):
         .replace("{{leaderboard_rows}}", leaderboard_html)
         .replace("{{joins_rows}}", joins_html)
     )
-    return web.Response(text=html, content_type="text/html")
+    return render_html_response(request, html)
 
 # ----------------- CSV EXPORT HANDLER -----------------
 async def handle_download_csv(request: web.Request):

@@ -3,7 +3,8 @@ from aiogram.types import (
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
     KeyboardButton,
-    ReplyKeyboardRemove
+    ReplyKeyboardRemove,
+    WebAppInfo
 )
 
 def get_direction_keyboard() -> InlineKeyboardMarkup:
@@ -38,16 +39,22 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         is_persistent=True
     )
 
-def get_admin_main_keyboard(live_enabled: bool = True) -> ReplyKeyboardMarkup:
+def get_admin_main_keyboard(live_enabled: bool = True, webapp_url: str = "") -> ReplyKeyboardMarkup:
     """Administrator uchun maxsus pastki menyu tugmalari"""
     live_status = "🔔 Jonli xabarlar: Yoqilgan" if live_enabled else "🔕 Jonli xabarlar: O'chirilgan"
+    
+    app_btn = KeyboardButton(
+        text="🚀 Admin Panel",
+        web_app=WebAppInfo(url=webapp_url)
+    ) if webapp_url else KeyboardButton(text="🌐 Admin Panel (Sayt)")
+
     buttons = [
         [
             KeyboardButton(text="📊 Statistika"),
             KeyboardButton(text=live_status)
         ],
         [
-            KeyboardButton(text="🌐 Admin Panel (Sayt)"),
+            app_btn,
             KeyboardButton(text="👥 Taklif havolasi olish")
         ]
     ]
