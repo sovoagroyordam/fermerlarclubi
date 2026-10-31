@@ -239,6 +239,34 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: Comm
     if not user:
         return
 
+    # 0. Admin tekshiruvi: Agar foydalanuvchi Admin bo'lsa, unga anketa berilmaydi!
+    admin_chat_id = await get_effective_admin_chat_id()
+    if admin_chat_id and str(user.id) == str(admin_chat_id):
+        await state.clear()
+        stats = await get_stats()
+        group_id = await get_effective_group_id()
+        group_status = f"`{group_id}`" if group_id else "*Hali belgilanmagan*"
+        
+        admin_text = (
+            "👑 **Assalomu alaykum, Hurmatli Administrator!**\n\n"
+            "Siz botning boshqaruvchisisiz. Sizga oddiy foydalanuvchilar kabi anketalar berilmaydi.\n"
+            "Yangi fermerlar anketa to'ldirganda va guruhga qo'shilganda bot barcha ma'lumot va ovozli xabarlarni sizga yuborib turadi.\n\n"
+            f"📊 **Hozirgi statistika:**\n"
+            f"• Jami anketalar: **{stats['total']} ta**\n"
+            f"• Guruhga qo'shilganlar: **{stats['group_joins_count']} ta**\n"
+            f"• Telefon qoldirganlar: **{stats['with_phone']} ta**\n"
+            f"• Ovozli xabarlar: **{stats['with_voice']} ta**\n\n"
+            f"📌 **Ulangan guruh ID:** {group_status}\n"
+            "*(Guruhni ulash yoki almashtirish uchun o'sha guruh ichida `/id` deb yozing)*"
+        )
+        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Statistikani yangilash", callback_data="admin_refresh_stats")],
+            [InlineKeyboardButton(text="👥 Taklif havolasini olish", callback_data="btn_invite_friends")]
+        ])
+        await message.answer(admin_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+        await message.answer("🛠 Boshqaruv vositalari:", reply_markup=admin_kb)
+        return
+
     # Maxfiy referral kodini tekshirish (masalan: /start c_8f1b2c3d yoki ref_c_8f1b2c3d)
     referrer_id = None
     if command and command.args:
@@ -728,6 +756,37 @@ async def cb_admin_refresh(callback: CallbackQuery):
     except Exception:
         pass
     await callback.answer("Yangilandi!")
+
+@router.callback_query(F.data == "admin_refresh_stats")
+async def cb_admin_refresh_stats(callback: CallbackQuery):
+    admin_id = await get_effective_admin_chat_id()
+    if not admin_id or str(callback.from_user.id) != str(admin_id):
+        await callback.answer("Ruxsat berilmagan!", show_alert=True)
+        return
+
+    stats = await get_stats()
+    group_id = await get_effective_group_id()
+    group_status = f"`{group_id}`" if group_id else "*Hali belgilanmagan*"
+    
+    admin_text = (
+        "👑 **Administrator Boshqaruv Paneli**\n\n"
+        f"📊 **Yangilangan statistika:**\n"
+        f"• Jami anketalar: **{stats['total']} ta**\n"
+        f"• Guruhga qo'shilganlar: **{stats['group_joins_count']} ta**\n"
+        f"• Telefon qoldirganlar: **{stats['with_phone']} ta**\n"
+        f"• Ovozli xabarlar: **{stats['with_voice']} ta**\n\n"
+        f"📌 **Ulangan guruh ID:** {group_status}\n"
+        f"🕒 *Oxirgi tekshiruv:* `{time.strftime('%H:%M:%S')}`"
+    )
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Statistikani yangilash", callback_data="admin_refresh_stats")],
+        [InlineKeyboardButton(text="👥 Taklif havolasini olish", callback_data="btn_invite_friends")]
+    ])
+    try:
+        await callback.message.edit_text(admin_text, reply_markup=admin_kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer("Statistika yangilandi! ✅")
 
 @router.callback_query(F.data == "admin_referrals_stats")
 async def cb_admin_referrals_stats(callback: CallbackQuery):

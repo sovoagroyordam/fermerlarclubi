@@ -10,6 +10,7 @@ ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin777")
 SECRET_KEY = os.getenv("SECRET_KEY", "fermamax_super_secret_key_2026")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 if GROUP_ID:
     try:
