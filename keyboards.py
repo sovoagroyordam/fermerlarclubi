@@ -38,6 +38,25 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         is_persistent=True
     )
 
+def get_admin_main_keyboard(live_enabled: bool = True) -> ReplyKeyboardMarkup:
+    """Administrator uchun maxsus pastki menyu tugmalari"""
+    live_status = "🔔 Jonli xabarlar: Yoqilgan" if live_enabled else "🔕 Jonli xabarlar: O'chirilgan"
+    buttons = [
+        [
+            KeyboardButton(text="📊 Statistika"),
+            KeyboardButton(text=live_status)
+        ],
+        [
+            KeyboardButton(text="🌐 Admin Panel (Sayt)"),
+            KeyboardButton(text="👥 Taklif havolasi olish")
+        ]
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True,
+        is_persistent=True
+    )
+
 DIRECTION_MAP = {
     "dir_chorva": "chorva",
     "dir_parranda": "parranda",

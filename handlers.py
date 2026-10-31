@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import re
+import html
 from typing import Union
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, CommandObject
@@ -24,6 +25,7 @@ from database import (
     get_response, 
     get_user_by_id,
     set_setting, 
+    get_setting,
     update_phone_number, 
     get_stats, 
     get_recent_responses,
@@ -40,7 +42,13 @@ from database import (
     resolve_referral_code,
     mask_user_id
 )
-from keyboards import get_direction_keyboard, get_phone_keyboard, get_main_menu_keyboard, DIRECTION_MAP
+from keyboards import (
+    get_direction_keyboard, 
+    get_phone_keyboard, 
+    get_main_menu_keyboard, 
+    get_admin_main_keyboard,
+    DIRECTION_MAP
+)
 from states import CustDevStates
 from export_csv import export_to_csv, OUTPUT_CSV
 from analytics import analyze_custdev, CATEGORIES
@@ -120,20 +128,22 @@ async def handle_new_member_join(event: ChatMemberUpdated, bot: Bot):
         invite_link=invite_link_str
     )
 
-    # Adminga bildirishnoma yuborish
+    # Adminga bildirishnoma yuborish (agar Jonli xabarlar yoqilgan bo'lsa)
     admin_chat_id = await get_effective_admin_chat_id()
-    if admin_chat_id:
-        ref_text = f"\n👥 **Taklif qilgan:** {inviter_name} (`{creator_user_id}`)" if inviter_name else ""
-        link_text = f"\n🔗 **Ishlatilgan havola:** `{invite_link_str}`" if invite_link_str else ""
+    live_val = await get_setting("live_notifications", "1")
+    if admin_chat_id and live_val == "1":
+        ref_text = f"\n👥 <b>Taklif qilgan:</b> {html.escape(inviter_name)} (<code>{creator_user_id}</code>)" if inviter_name else ""
+        link_text = f"\n🔗 <b>Ishlatilgan havola:</b> <code>{html.escape(invite_link_str)}</code>" if invite_link_str else ""
+        uname_text = f"@{html.escape(new_member.username)}" if new_member.username else "yo'q"
         join_msg = (
-            "🎉 **Guruhga yangi fermer qo'shildi!**\n\n"
-            f"👤 **Fermer:** {new_member.full_name} (@{new_member.username or 'yo`q'})\n"
-            f"🆔 **ID:** `{new_member.id}`"
+            "🎉 <b>Guruhga yangi fermer qo'shildi!</b>\n\n"
+            f"👤 <b>Fermer:</b> {html.escape(new_member.full_name or 'Fermer')} ({uname_text})\n"
+            f"🆔 <b>ID:</b> <code>{new_member.id}</code>"
             f"{ref_text}"
             f"{link_text}"
         )
         try:
-            await bot.send_message(chat_id=admin_chat_id, text=join_msg, parse_mode="Markdown")
+            await bot.send_message(chat_id=admin_chat_id, text=join_msg, parse_mode="HTML")
         except Exception as e:
             logger.error(f"Adminga join xabarini yuborishda xatolik: {e}")
 
@@ -143,11 +153,11 @@ async def handle_new_member_join(event: ChatMemberUpdated, bot: Bot):
             await bot.send_message(
                 chat_id=creator_user_id,
                 text=(
-                    f"🎉 **Ajoyib yangilik!**\n\n"
-                    f"Siz taklif qilgan do'stingiz **{new_member.full_name}** Fermerlar Klubiga muvaffaqiyatli qo'shildi! "
+                    f"🎉 <b>Ajoyib yangilik!</b>\n\n"
+                    f"Siz taklif qilgan do'stingiz <b>{html.escape(new_member.full_name or 'Do`stingiz')}</b> Fermerlar Klubiga muvaffaqiyatli qo'shildi! "
                     "Klubimizni birgalikda rivojlantirayotganingiz uchun rahmat! 🤝"
                 ),
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception as e:
             logger.debug(f"Referrerga xushxabar yuborilmadi: {e}")
@@ -245,26 +255,25 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot, command: Comm
         await state.clear()
         stats = await get_stats()
         group_id = await get_effective_group_id()
-        group_status = f"`{group_id}`" if group_id else "*Hali belgilanmagan*"
+        group_status = f"<code>{group_id}</code>" if group_id else "<i>Hali belgilanmagan</i>"
+        
+        live_val = await get_setting("live_notifications", "1")
+        live_enabled = (live_val == "1")
+        live_status_badge = "Yoqilgan 🟢" if live_enabled else "O'chirilgan 🔴"
         
         admin_text = (
-            "👑 **Assalomu alaykum, Hurmatli Administrator!**\n\n"
-            "Siz botning boshqaruvchisisiz. Sizga oddiy foydalanuvchilar kabi anketalar berilmaydi.\n"
-            "Yangi fermerlar anketa to'ldirganda va guruhga qo'shilganda bot barcha ma'lumot va ovozli xabarlarni sizga yuborib turadi.\n\n"
-            f"📊 **Hozirgi statistika:**\n"
-            f"• Jami anketalar: **{stats['total']} ta**\n"
-            f"• Guruhga qo'shilganlar: **{stats['group_joins_count']} ta**\n"
-            f"• Telefon qoldirganlar: **{stats['with_phone']} ta**\n"
-            f"• Ovozli xabarlar: **{stats['with_voice']} ta**\n\n"
-            f"📌 **Ulangan guruh ID:** {group_status}\n"
-            "*(Guruhni ulash yoki almashtirish uchun o'sha guruh ichida `/id` deb yozing)*"
+            "👑 <b>Assalomu alaykum, Hurmatli Administrator!</b>\n\n"
+            "Siz botning boshqaruvchisisiz. Sizga oddiy foydalanuvchilar kabi anketalar berilmaydi.\n\n"
+            f"🔔 <b>Jonli xabarlar:</b> {live_status_badge}\n"
+            f"📌 <b>Ulangan guruh ID:</b> {group_status}\n\n"
+            f"📊 <b>Hozirgi statistika:</b>\n"
+            f"• Jami anketalar: <b>{stats['total']} ta</b>\n"
+            f"• Guruhga qo'shilganlar: <b>{stats['group_joins_count']} ta</b>\n"
+            f"• Telefon qoldirganlar: <b>{stats['with_phone']} ta</b>\n"
+            f"• Ovozli xabarlar: <b>{stats['with_voice']} ta</b>\n\n"
+            "Pastdagi tugmalar orqali statistikani ko'rishingiz yoki jonli xabarlarni yoqib-o'chirishingiz mumkin 👇"
         )
-        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Statistikani yangilash", callback_data="admin_refresh_stats")],
-            [InlineKeyboardButton(text="👥 Taklif havolasini olish", callback_data="btn_invite_friends")]
-        ])
-        await message.answer(admin_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-        await message.answer("🛠 Boshqaruv vositalari:", reply_markup=admin_kb)
+        await message.answer(admin_text, reply_markup=get_admin_main_keyboard(live_enabled), parse_mode="HTML")
         return
 
     # Maxfiy referral kodini tekshirish (masalan: /start c_8f1b2c3d yoki ref_c_8f1b2c3d)
@@ -497,7 +506,7 @@ async def process_dissatisfaction(message: Message, state: FSMContext, bot: Bot)
 
     success_msg = (
         "Rahmat, barcha savollarga javob berdingiz! 🙏\n\n"
-        f"Mana klubga kirish linki (faqat siz uchun bir martalik):\n🔗 **{link_display}**\n\n"
+        f"Mana klubga kirish linki (faqat siz uchun bir martalik):\n🔗 <b>{html.escape(link_display)}</b>\n\n"
         "Ixtiyoriy: sizga mos yechim tayyorlaganimizda xabar berishimiz uchun "
         "telefon raqamingizni qoldirishingiz mumkin."
     )
@@ -506,49 +515,60 @@ async def process_dissatisfaction(message: Message, state: FSMContext, bot: Bot)
         [InlineKeyboardButton(text="👥 Do'stni taklif qilish (1 martalik havola)", callback_data="btn_invite_friends")]
     ])
 
-    await message.answer(success_msg, reply_markup=get_phone_keyboard(), parse_mode="Markdown")
+    await message.answer(success_msg, reply_markup=get_phone_keyboard(), parse_mode="HTML")
     await message.answer(
         "Fermer do'stingiz bormi? Uni ham klubimizga taklif qiling! 👇", 
         reply_markup=post_survey_kb
     )
     await state.set_state(CustDevStates.phone)
 
-    # Adminga yangi anketa hisobotini yuborish
-    if admin_chat_id:
+    # Adminga yangi anketa hisobotini yuborish (agar Jonli xabarlar yoqilgan bo'lsa)
+    live_val = await get_setting("live_notifications", "1")
+    if admin_chat_id and live_val == "1":
         direction_badge = "🐄 Chorva" if direction == "chorva" else "🐔 Parranda"
-        ref_line = f"\n🔗 **Taklif qilgan:** `{referred_by}`" if referred_by else ""
+        ref_line = f"\n🔗 <b>Taklif qilgan:</b> <code>{referred_by}</code>" if referred_by else ""
+        uname_str = f"@{html.escape(username)}" if username else "yo'q"
+        
+        has_voice = bool(problem_voice_id or solution_voice_id or dissatisfaction_voice_id)
+        voice_hint = ""
+        if has_voice:
+            voice_hint = (
+                "\n\n🎙 <b>Ovozli xabar qoldirildi:</b>\n"
+                "🌐 Web Admin Panelda eshitish: https://fermerlarclubi.onrender.com"
+            )
+
         admin_report = (
-            "📋 **Yangi fermer anketa to'ldirdi!**\n\n"
-            f"👤 **Fermer:** {full_name} "
-            f"({'@' + username if username else 'username yo`q'})\n"
-            f"🆔 **Telegram ID:** `{user_id}`\n"
-            f"🏷 **Yo'nalish:** {direction_badge}\n"
-            f"🔢 **Hajm (bosh soni):** {livestock_count}"
+            "📋 <b>Yangi fermer anketa to'ldirdi!</b>\n\n"
+            f"👤 <b>Fermer:</b> {html.escape(full_name)} ({uname_str})\n"
+            f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
+            f"🏷 <b>Yo'nalish:</b> {direction_badge}\n"
+            f"🔢 <b>Hajm (bosh soni):</b> {html.escape(livestock_count or '—')}"
             f"{ref_line}\n\n"
-            f"📌 **2-savol (Muammo):**\n{problem}\n\n"
-            f"🛠 **3-savol (Yechim & Xarajat):**\n{solution_taken}\n\n"
-            f"❓ **4-savol (Yetishmagan jihat):**\n{dissatisfaction}"
+            f"📌 <b>2-savol (Muammo):</b>\n{html.escape(problem or '—')}\n\n"
+            f"🛠 <b>3-savol (Yechim & Xarajat):</b>\n{html.escape(solution_taken or '—')}\n\n"
+            f"❓ <b>4-savol (Yetishmagan jihat):</b>\n{html.escape(dissatisfaction or '—')}"
+            f"{voice_hint}"
         )
         try:
-            await bot.send_message(chat_id=admin_chat_id, text=admin_report, parse_mode="Markdown")
+            await bot.send_message(chat_id=admin_chat_id, text=admin_report, parse_mode="HTML")
             
             if problem_voice_id:
                 await bot.send_voice(
                     chat_id=admin_chat_id,
                     voice=problem_voice_id,
-                    caption=f"🎙 2-savol javobi (ovozli) — {full_name}"
+                    caption=f"🎙 2-savol javobi (ovozli) — {html.escape(full_name)}"
                 )
             if solution_voice_id:
                 await bot.send_voice(
                     chat_id=admin_chat_id,
                     voice=solution_voice_id,
-                    caption=f"🎙 3-savol javobi (ovozli) — {full_name}"
+                    caption=f"🎙 3-savol javobi (ovozli) — {html.escape(full_name)}"
                 )
             if dissatisfaction_voice_id:
                 await bot.send_voice(
                     chat_id=admin_chat_id,
                     voice=dissatisfaction_voice_id,
-                    caption=f"🎙 4-savol javobi (ovozli) — {full_name}"
+                    caption=f"🎙 4-savol javobi (ovozli) — {html.escape(full_name)}"
                 )
         except Exception as e:
             logger.error(f"Adminga hisobot yuborishda xatolik: {e}")
@@ -611,12 +631,13 @@ async def process_phone(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
 
     admin_chat_id = await get_effective_admin_chat_id()
-    if admin_chat_id:
+    live_val = await get_setting("live_notifications", "1")
+    if admin_chat_id and live_val == "1":
         try:
             await bot.send_message(
                 chat_id=admin_chat_id,
-                text=f"📞 **Fermer telefon raqamini qoldirdi:**\n👤 {user.full_name}\n📱 `{phone_number}`",
-                parse_mode="Markdown"
+                text=f"📞 <b>Fermer telefon raqamini qoldirdi:</b>\n👤 {html.escape(user.full_name)}\n📱 <code>{html.escape(phone_number)}</code>",
+                parse_mode="HTML"
             )
         except Exception as e:
             logger.error(f"Telefon raqamini adminga yuborishda xatolik: {e}")
@@ -699,6 +720,79 @@ async def handle_news(message: Message):
         "✨ *Barcha tafsilotlar va yangiliklar yopiq guruhimizda e'lon qilib boriladi!*"
     )
     await message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+
+# ==================== ADMINISTRATOR TUGMALARI (STATISTIKA & JONLI XABARLAR) ====================
+
+@router.message(F.text == "📊 Statistika")
+async def handle_admin_stats_button(message: Message):
+    admin_chat_id = await get_effective_admin_chat_id()
+    if not (admin_chat_id and str(message.from_user.id) == str(admin_chat_id)):
+        return
+    stats = await get_stats()
+    group_id = await get_effective_group_id()
+    group_status = f"<code>{group_id}</code>" if group_id else "<i>Hali belgilanmagan</i>"
+    live_val = await get_setting("live_notifications", "1")
+    live_status_text = "Yoqilgan 🟢" if live_val == "1" else "O'chirilgan 🔴"
+    
+    text = (
+        "📊 <b>Fermerlar Klubi — To'liq Statistika</b>\n\n"
+        f"👥 <b>Jami anketalar:</b> {stats['total']} ta\n"
+        f"🐄 <b>Chorvachilik:</b> {stats['chorva']} ta\n"
+        f"🐔 <b>Parrandachilik:</b> {stats['parranda']} ta\n"
+        f"📱 <b>Telefon qoldirganlar:</b> {stats['with_phone']} ta\n"
+        f"🎙 <b>Ovozli xabarlar:</b> {stats['with_voice']} ta\n"
+        f"🚪 <b>Guruhga qo'shilganlar:</b> {stats['group_joins_count']} ta\n"
+        f"🔗 <b>Taklif orqali qo'shilganlar:</b> {stats['referred_joins_count']} ta\n\n"
+        f"🔔 <b>Jonli bildirishnomalar:</b> {live_status_text}\n"
+        f"📌 <b>Ulangan guruh ID:</b> {group_status}\n"
+        f"🕒 <i>Vaqt:</i> <code>{time.strftime('%Y-%m-%d %H:%M:%S')}</code>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(F.text.startswith("🔔 Jonli xabarlar") | F.text.startswith("🔕 Jonli xabarlar"))
+async def handle_admin_toggle_live_notifications(message: Message):
+    admin_chat_id = await get_effective_admin_chat_id()
+    if not (admin_chat_id and str(message.from_user.id) == str(admin_chat_id)):
+        return
+    
+    curr = await get_setting("live_notifications", "1")
+    new_val = "0" if curr == "1" else "1"
+    await set_setting("live_notifications", new_val)
+    
+    if new_val == "1":
+        ans = (
+            "🔔 <b>Jonli xabarlar YOQILDI!</b>\n\n"
+            "Har bir yangi fermer guruhga qo'shilganda yoki anketa to'ldirganda "
+            "barcha ma'lumotlar, telefon va ovozli xabarlar profilingizga xabar bo'lib tushadi."
+        )
+    else:
+        ans = (
+            "🔕 <b>Jonli xabarlar O'CHIRILDI!</b>\n\n"
+            "Endi yangi anketalar profilingizga kelmaydi, faqat Web Admin Panel (https://fermerlarclubi.onrender.com) "
+            "va Neon bazasiga yozilib boradi."
+        )
+    await message.answer(ans, reply_markup=get_admin_main_keyboard(new_val == "1"), parse_mode="HTML")
+
+@router.message(F.text == "🌐 Admin Panel (Sayt)")
+async def handle_admin_web_link(message: Message):
+    admin_chat_id = await get_effective_admin_chat_id()
+    if not (admin_chat_id and str(message.from_user.id) == str(admin_chat_id)):
+        return
+    text = (
+        "🌐 <b>Web Admin Panel</b>\n\n"
+        "Barcha anketalarni ko'rish, ovozlarni eshitish va Excel (CSV) yuklab olish uchun quyidagi manzilga kiring:\n\n"
+        "🔗 https://fermerlarclubi.onrender.com\n\n"
+        "👤 <b>Login:</b> <code>admin</code>\n"
+        "🔑 <b>Parol:</b> <code>admin777</code>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(F.text == "👥 Taklif havolasi olish")
+async def handle_admin_get_invite_link(message: Message, bot: Bot):
+    admin_chat_id = await get_effective_admin_chat_id()
+    if not (admin_chat_id and str(message.from_user.id) == str(admin_chat_id)):
+        return
+    await handle_invite_friends(message, bot)
 
 # ==================== SODDA ADMIN PANEL (/admin) ====================
 
