@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: fermamax_bot
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./fermamax.db:/app/fermamax.db
+      - ./.env:/app/.env
+

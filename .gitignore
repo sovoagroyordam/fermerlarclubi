@@ -1,0 +1,22 @@
+# Maxfiy kalitlar va muhit
+.env
+
+# Virtual muhit
+.venv/
+env/
+venv/
+
+# Python keshi
+__pycache__/
+*.pyc
+
+# Tizim fayllari
+.DS_Store
+
+# Ma'lumotlar bazasi va audio fayllar (lokal)
+fermamax.db
+custdev_javoblari.csv
+voices/*.ogg
+voices/*.wav
+!voices/.gitkeep
+
