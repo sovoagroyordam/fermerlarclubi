@@ -10,12 +10,24 @@ DB_NAME = os.getenv("DB_PATH", "fermamax.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 _pg_pool = None
+_pg_disabled = False
 
 def is_postgres() -> bool:
-    return bool(DATABASE_URL)
+    return bool(DATABASE_URL) and not _pg_disabled
+
+def _clean_row(row) -> dict:
+    if row is None:
+        return None
+    d = dict(row)
+    for k, v in d.items():
+        if hasattr(v, "strftime"):
+            d[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+    return d
 
 async def get_pg_pool():
-    global _pg_pool
+    global _pg_pool, _pg_disabled
+    if _pg_disabled:
+        return None
     if _pg_pool is None:
         import asyncpg
         dsn = DATABASE_URL
@@ -36,8 +48,18 @@ async def get_pg_pool():
                 ssl_mode = "require"
 
         logger.info("🐘 PostgreSQL (Neon) bazasiga ulanmoqda...")
-        _pg_pool = await asyncpg.create_pool(dsn, ssl=ssl_mode, min_size=1, max_size=10)
-        logger.info("✅ PostgreSQL (Neon) ulanishi muvaffaqiyatli o'rnatildi!")
+        try:
+            _pg_pool = await asyncpg.create_pool(dsn, ssl=ssl_mode, min_size=1, max_size=10, timeout=10)
+            logger.info("✅ PostgreSQL (Neon) ulanishi muvaffaqiyatli o'rnatildi!")
+        except Exception as e:
+            logger.warning(f"⚠️ SSL='require' bilan ulanish o'xshamadi ({e}), ssl=True bilan urinib ko'ramiz...")
+            try:
+                _pg_pool = await asyncpg.create_pool(dsn, ssl=True, min_size=1, max_size=10, timeout=10)
+                logger.info("✅ PostgreSQL (Neon) ulanishi (ssl=True) o'rnatildi!")
+            except Exception as e2:
+                logger.error(f"❌ PostgreSQL ga ulanishda xatolik: {e2}. SQLite bazasiga o'tilmoqda!")
+                _pg_disabled = True
+                return None
     return _pg_pool
 
 def _format_sql(sql: str) -> str:
@@ -58,55 +80,72 @@ def _format_sql(sql: str) -> str:
     return sql
 
 async def db_execute(sql: str, params: tuple = ()):
-    sql = _format_sql(sql)
     if is_postgres():
         pool = await get_pg_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(sql, *params)
-    else:
-        async with aiosqlite.connect(DB_NAME) as db:
-            await db.execute(sql, params)
-            await db.commit()
+        if pool:
+            sql_fmt = _format_sql(sql)
+            try:
+                async with pool.acquire() as conn:
+                    await conn.execute(sql_fmt, *params)
+                return
+            except Exception as e:
+                logger.error(f"PostgreSQL execute xatosi: {e}")
+    # SQLite fallback
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(sql, params)
+        await db.commit()
 
 async def db_fetch_one(sql: str, params: tuple = ()) -> dict:
-    sql = _format_sql(sql)
     if is_postgres():
         pool = await get_pg_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(sql, *params)
-            return dict(row) if row else None
-    else:
-        async with aiosqlite.connect(DB_NAME) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(sql, params) as cur:
-                row = await cur.fetchone()
-                return dict(row) if row else None
+        if pool:
+            sql_fmt = _format_sql(sql)
+            try:
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(sql_fmt, *params)
+                    return _clean_row(row)
+            except Exception as e:
+                logger.error(f"PostgreSQL fetchrow xatosi: {e}")
+    # SQLite fallback
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, params) as cur:
+            row = await cur.fetchone()
+            return _clean_row(row)
 
 async def db_fetch_val(sql: str, params: tuple = ()):
-    sql = _format_sql(sql)
     if is_postgres():
         pool = await get_pg_pool()
-        async with pool.acquire() as conn:
-            return await conn.fetchval(sql, *params)
-    else:
-        async with aiosqlite.connect(DB_NAME) as db:
-            async with db.execute(sql, params) as cur:
-                row = await cur.fetchone()
-                return row[0] if row else None
+        if pool:
+            sql_fmt = _format_sql(sql)
+            try:
+                async with pool.acquire() as conn:
+                    return await conn.fetchval(sql_fmt, *params)
+            except Exception as e:
+                logger.error(f"PostgreSQL fetchval xatosi: {e}")
+    # SQLite fallback
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(sql, params) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
 
 async def db_fetch_all(sql: str, params: tuple = ()) -> list:
-    sql = _format_sql(sql)
     if is_postgres():
         pool = await get_pg_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, *params)
-            return [dict(r) for r in rows]
-    else:
-        async with aiosqlite.connect(DB_NAME) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(sql, params) as cur:
-                rows = await cur.fetchall()
-                return [dict(r) for r in rows]
+        if pool:
+            sql_fmt = _format_sql(sql)
+            try:
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(sql_fmt, *params)
+                    return [_clean_row(r) for r in rows]
+            except Exception as e:
+                logger.error(f"PostgreSQL fetchall xatosi: {e}")
+    # SQLite fallback
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+            return [_clean_row(r) for r in rows]
 
 # ==================== JADVALLARNI YARATISH (INIT) ====================
 

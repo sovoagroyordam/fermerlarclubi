@@ -40,6 +40,19 @@ def render_logo_svg(size=24, color="#000000"):
         f'</svg>'
     )
 
+def safe_str(val, default="—") -> str:
+    if val is None or val == "":
+        return default
+    return html_lib.escape(str(val))
+
+def safe_datetime(val) -> str:
+    if not val:
+        return ""
+    if hasattr(val, "strftime"):
+        return val.strftime("%Y-%m-%d %H:%M")
+    s = str(val)
+    return s[:16] if len(s) >= 16 else s
+
 def generate_auth_token() -> str:
     msg = f"{ADMIN_USERNAME}:{ADMIN_PASSWORD}".encode("utf-8")
     return hmac.new(SECRET_KEY.encode("utf-8"), msg, hashlib.sha256).hexdigest()
@@ -1107,35 +1120,35 @@ async def handle_index(request: web.Request):
                     <span>•</span>
                     <span style="color:#8c959f;">ID: {mask_user_id(r.get('user_id'))}</span>
                     <span>•</span>
-                    <span>Hajm: {html_lib.escape(r.get('livestock_count', '—'))}</span>
+                    <span>Hajm: {safe_str(r.get('livestock_count'))}</span>
                     <span>•</span>
-                    <span>{r.get('created_at', '')[:16]}</span>
+                    <span>{safe_datetime(r.get('created_at'))}</span>
                 </div>
 
                 <div class="issue-details" id="details-{resp_id}">
                     {referrer_box}
                     <div class="qa-block">
                         <div class="qa-title">1-b. Bosh soni / Parranda hajmi:</div>
-                        <div class="qa-text">{html_lib.escape(r.get('livestock_count', '—'))}</div>
+                        <div class="qa-text">{safe_str(r.get('livestock_count'))}</div>
                     </div>
                     <div class="qa-block">
                         <div class="qa-title">2-savol: Asosiy muammo (Dard)</div>
-                        <div class="qa-text">{html_lib.escape(r.get('problem', '—'))}</div>
+                        <div class="qa-text">{safe_str(r.get('problem'))}</div>
                         {problem_audio_html}
                     </div>
                     <div class="qa-block">
                         <div class="qa-title">3-savol: Qanday hal qildi va xarajat</div>
-                        <div class="qa-text">{html_lib.escape(r.get('solution_taken', '—'))}</div>
+                        <div class="qa-text">{safe_str(r.get('solution_taken'))}</div>
                         {solution_audio_html}
                     </div>
                     <div class="qa-block">
                         <div class="qa-title">4-savol: Yetishmagan jihat / norozilik</div>
-                        <div class="qa-text">{html_lib.escape(r.get('dissatisfaction', '—'))}</div>
+                        <div class="qa-text">{safe_str(r.get('dissatisfaction'))}</div>
                         {dissatisfaction_audio_html}
                     </div>
                     <div class="qa-block">
                         <div class="qa-title">Telefon raqam</div>
-                        <div class="qa-text" style="font-weight:600; color:#1a7f37;">{html_lib.escape(phone) if phone else "Qoldirilmagan"}</div>
+                        <div class="qa-text" style="font-weight:600; color:#1a7f37;">{safe_str(phone, "Qoldirilmagan")}</div>
                     </div>
                 </div>
             </div>
@@ -1322,12 +1335,12 @@ async def handle_members(request: web.Request):
                 <div class="leaderboard-user">
                     <div class="rank-badge {rank_class}">{idx}</div>
                     <div>
-                        <div style="font-weight:600;color:#1f2328;">{html_lib.escape(tr['full_name'])}</div>
-                        <div style="font-size:11px;color:#656d76;">{html_lib.escape(u_text)} • ID: {mask_user_id(tr['user_id'])}</div>
+                        <div style="font-weight:600;color:#1f2328;">{safe_str(tr.get('full_name'))}</div>
+                        <div style="font-size:11px;color:#656d76;">{safe_str(u_text)} • ID: {mask_user_id(tr.get('user_id'))}</div>
                     </div>
                 </div>
                 <div>
-                    <span class="gh-label label-ref" style="font-size:12px;font-weight:600;">{tr['referral_count']} ta do'st</span>
+                    <span class="gh-label label-ref" style="font-size:12px;font-weight:600;">{tr.get('referral_count', 0)} ta do'st</span>
                 </div>
             </div>
             """
@@ -1343,16 +1356,16 @@ async def handle_members(request: web.Request):
         inviter_html = '<span style="color:#656d76;">To\'g\'ridan-to\'g\'ri (CustDev)</span>'
         if j.get("inviter_name"):
             inv_uname = f" (@{j['inviter_username']})" if j.get("inviter_username") else ""
-            inviter_html = f'<span class="gh-label label-ref">🔗 {html_lib.escape(j["inviter_name"])}{html_lib.escape(inv_uname)}</span>'
+            inviter_html = f'<span class="gh-label label-ref">🔗 {safe_str(j.get("inviter_name"))}{safe_str(inv_uname, "")}</span>'
 
         link_type = '<span class="gh-badge" style="background:#dafbe1;color:#1a7f37;border-color:#4ac26b;">1 martalik ishlatildi</span>' if j.get("invite_link") else '<span class="gh-badge">Standart</span>'
 
         tr = f"""
         <tr>
-            <td style="color:#656d76;">#{j['id']}</td>
-            <td><strong>{html_lib.escape(j['full_name'])}</strong></td>
-            <td><code>{html_lib.escape(uname)}</code> <small style="color:#656d76;">({mask_user_id(j['user_id'])})</small></td>
-            <td>{j['joined_at'][:16]}</td>
+            <td style="color:#656d76;">#{j.get('id', idx)}</td>
+            <td><strong>{safe_str(j.get('full_name'))}</strong></td>
+            <td><code>{safe_str(uname)}</code> <small style="color:#656d76;">({mask_user_id(j.get('user_id'))})</small></td>
+            <td>{safe_datetime(j.get('joined_at'))}</td>
             <td>{inviter_html}</td>
             <td>{link_type}</td>
         </tr>
@@ -1416,8 +1429,47 @@ async def handle_download_csv(request: web.Request):
 async def handle_health(request: web.Request) -> web.Response:
     return web.Response(text="OK", content_type="text/plain")
 
+@web.middleware
+async def error_middleware(request: web.Request, handler):
+    try:
+        return await handler(request)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        import logging
+        err_tb = traceback.format_exc()
+        logging.getLogger(__name__).error(f"ADMIN PANEL XATOLIK ({request.path}):\n{err_tb}")
+        err_msg = html_lib.escape(str(e))
+        html = f"""<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="utf-8">
+    <title>Server Xatosi (500)</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff5f5; color: #1f2328; padding: 40px 20px; max-width: 800px; margin: 0 auto; }}
+        .card {{ background: #fff; border: 1px solid #fed7d7; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }}
+        h2 {{ color: #c53030; margin-bottom: 12px; }}
+        pre {{ background: #2d3748; color: #f7fafc; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.4; }}
+        .btn {{ display: inline-block; margin-top: 16px; padding: 8px 16px; background: #0969da; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 500; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>⚠️ Serverda xatolik yuz berdi (500)</h2>
+        <p><strong>Xatolik:</strong> <code>{err_msg}</code></p>
+        <p><strong>So'rov manzili:</strong> <code>{html_lib.escape(request.path)}</code></p>
+        <h4 style="margin-top:16px;">Tafsilot (Traceback):</h4>
+        <pre>{html_lib.escape(err_tb)}</pre>
+        <a href="/" class="btn">Bosh sahifaga qaytish</a>
+        <a href="/login" class="btn" style="background:#656d76;margin-left:8px;">Qayta kirish</a>
+    </div>
+</body>
+</html>"""
+        return web.Response(status=500, text=html, content_type="text/html")
+
 def create_admin_app():
-    app = web.Application()
+    app = web.Application(middlewares=[error_middleware])
     app.router.add_get("/health", handle_health)
     app.router.add_get("/", handle_index)
     app.router.add_get("/analysis", handle_analysis)
