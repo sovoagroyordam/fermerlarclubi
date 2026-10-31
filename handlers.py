@@ -120,7 +120,7 @@ async def handle_new_member_join(event: ChatMemberUpdated, bot: Bot):
                 if inviter:
                     inviter_name = inviter.get("full_name")
 
-    await record_group_join(
+    is_new = await record_group_join(
         user_id=new_member.id,
         full_name=new_member.full_name or "Fermer",
         username=new_member.username or "",
@@ -128,39 +128,40 @@ async def handle_new_member_join(event: ChatMemberUpdated, bot: Bot):
         invite_link=invite_link_str
     )
 
-    # Adminga bildirishnoma yuborish (agar Jonli xabarlar yoqilgan bo'lsa)
-    admin_chat_id = await get_effective_admin_chat_id()
-    live_val = await get_setting("live_notifications", "1")
-    if admin_chat_id and live_val == "1":
-        ref_text = f"\n👥 <b>Taklif qilgan:</b> {html.escape(inviter_name)} (<code>{creator_user_id}</code>)" if inviter_name else ""
-        link_text = f"\n🔗 <b>Ishlatilgan havola:</b> <code>{html.escape(invite_link_str)}</code>" if invite_link_str else ""
-        uname_text = f"@{html.escape(new_member.username)}" if new_member.username else "yo'q"
-        join_msg = (
-            "🎉 <b>Guruhga yangi fermer qo'shildi!</b>\n\n"
-            f"👤 <b>Fermer:</b> {html.escape(new_member.full_name or 'Fermer')} ({uname_text})\n"
-            f"🆔 <b>ID:</b> <code>{new_member.id}</code>"
-            f"{ref_text}"
-            f"{link_text}"
-        )
-        try:
-            await bot.send_message(chat_id=admin_chat_id, text=join_msg, parse_mode="HTML")
-        except Exception as e:
-            logger.error(f"Adminga join xabarini yuborishda xatolik: {e}")
-
-    # Taklif qilgan fermerga xushxabar berish
-    if creator_user_id and creator_user_id != new_member.id:
-        try:
-            await bot.send_message(
-                chat_id=creator_user_id,
-                text=(
-                    f"🎉 <b>Ajoyib yangilik!</b>\n\n"
-                    f"Siz taklif qilgan do'stingiz <b>{html.escape(new_member.full_name or 'Do`stingiz')}</b> Fermerlar Klubiga muvaffaqiyatli qo'shildi! "
-                    "Klubimizni birgalikda rivojlantirayotganingiz uchun rahmat! 🤝"
-                ),
-                parse_mode="HTML"
+    # Faqat yangi unikal a'zo bo'lsa bildirishnomalar yuboriladi (qayta-qayta kirganlar sanalmaydi)
+    if is_new:
+        admin_chat_id = await get_effective_admin_chat_id()
+        live_val = await get_setting("live_notifications", "1")
+        if admin_chat_id and live_val == "1":
+            ref_text = f"\n👥 <b>Taklif qilgan:</b> {html.escape(inviter_name)} (<code>{creator_user_id}</code>)" if inviter_name else ""
+            link_text = f"\n🔗 <b>Ishlatilgan havola:</b> <code>{html.escape(invite_link_str)}</code>" if invite_link_str else ""
+            uname_text = f"@{html.escape(new_member.username)}" if new_member.username else "yo'q"
+            join_msg = (
+                "🎉 <b>Guruhga yangi fermer qo'shildi!</b>\n\n"
+                f"👤 <b>Fermer:</b> {html.escape(new_member.full_name or 'Fermer')} ({uname_text})\n"
+                f"🆔 <b>ID:</b> <code>{new_member.id}</code>"
+                f"{ref_text}"
+                f"{link_text}"
             )
-        except Exception as e:
-            logger.debug(f"Referrerga xushxabar yuborilmadi: {e}")
+            try:
+                await bot.send_message(chat_id=admin_chat_id, text=join_msg, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"Adminga join xabarini yuborishda xatolik: {e}")
+
+        # Taklif qilgan fermerga faqat yangi do'st qo'shilganda xushxabar berish
+        if creator_user_id and creator_user_id != new_member.id:
+            try:
+                await bot.send_message(
+                    chat_id=creator_user_id,
+                    text=(
+                        f"🎉 <b>Ajoyib yangilik!</b>\n\n"
+                        f"Siz taklif qilgan do'stingiz <b>{html.escape(new_member.full_name or 'Do`stingiz')}</b> Fermerlar Klubiga muvaffaqiyatli qo'shildi! "
+                        "Klubimizni birgalikda rivojlantirayotganingiz uchun rahmat! 🤝"
+                    ),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.debug(f"Referrerga xushxabar yuborilmadi: {e}")
 
 @router.message(F.new_chat_members)
 async def auto_delete_join_messages(message: Message):

@@ -436,19 +436,24 @@ async def mark_invite_link_used(link: str, used_by_user_id: int, used_by_name: s
 
 # ==================== GURUHGA QO'SHILGANLARNI QAYD ETISH ====================
 
-async def record_group_join(user_id: int, full_name: str, username: str = "", invited_by: int = None, invite_link: str = None):
-    # Oxirgi 60 soniyada xuddi shu foydalanuvchi qayd etilgan bo'lsa takrorlamaslik
-    existing = await db_fetch_one(
-        "SELECT id FROM group_joins WHERE user_id = ? AND joined_at >= datetime('now', '-60 seconds')",
-        (user_id,)
-    )
+async def record_group_join(user_id: int, full_name: str, username: str = "", invited_by: int = None, invite_link: str = None) -> bool:
+    """
+    Guruhga qo'shilgan a'zoni qayd etish.
+    UNIKAL USER ALGORITMI:
+    Agar bu user_id avval guruhga qo'shilgan bo'lsa (qayta kirsa ham), yangi a'zo deb hisoblanmaydi (False qaytaradi).
+    Faqat birinchi marta qo'shilayotgan yangi unikal a'zolar bazaga kiritiladi va True qaytaradi.
+    """
+    existing = await db_fetch_one("SELECT id, invited_by FROM group_joins WHERE user_id = ?", (user_id,))
     if existing:
-        return
+        if invited_by and not existing.get("invited_by"):
+            await db_execute("UPDATE group_joins SET invited_by = ?, invite_link = ? WHERE id = ?", (invited_by, invite_link, existing["id"]))
+        return False  # Takroriy qo'shilish, yangi unikal a'zo emas
 
     await db_execute("""
         INSERT INTO group_joins (user_id, full_name, username, invited_by, invite_link)
         VALUES (?, ?, ?, ?, ?)
     """, (user_id, full_name, username, invited_by, invite_link))
+    return True  # Yangi unikal a'zo!
 
 async def get_group_joins(limit: int = 100):
     return await db_fetch_all("""
@@ -471,13 +476,15 @@ async def get_user_referrals(user_id: int):
     """, (user_id,))
 
 async def get_user_referral_count(user_id: int) -> int:
-    c1 = await db_fetch_val("SELECT COUNT(*) FROM responses WHERE referred_by = ?", (user_id,)) or 0
-    c2 = await db_fetch_val("SELECT COUNT(*) FROM group_joins WHERE invited_by = ?", (user_id,)) or 0
+    # Faqat unikal foydalanuvchilar soni
+    c1 = await db_fetch_val("SELECT COUNT(DISTINCT user_id) FROM responses WHERE referred_by = ?", (user_id,)) or 0
+    c2 = await db_fetch_val("SELECT COUNT(DISTINCT user_id) FROM group_joins WHERE invited_by = ?", (user_id,)) or 0
     return max(int(c1), int(c2))
 
 async def get_top_referrers(limit: int = 10):
+    # Har bir taklif qiluvchi uchun unikal a'zolar sanaladi
     return await db_fetch_all("""
-        SELECT r.user_id, r.full_name, r.username, COUNT(j.id) AS referral_count
+        SELECT r.user_id, r.full_name, r.username, COUNT(DISTINCT j.user_id) AS referral_count
         FROM responses r
         JOIN group_joins j ON j.invited_by = r.user_id
         GROUP BY r.user_id, r.full_name, r.username
@@ -499,8 +506,9 @@ async def get_stats():
            OR (solution_voice_path IS NOT NULL AND solution_voice_path != '')
            OR (dissatisfaction_voice_path IS NOT NULL AND dissatisfaction_voice_path != '')
     """) or 0
-    group_joins_count = await db_fetch_val("SELECT COUNT(*) FROM group_joins") or 0
-    referred_joins_count = await db_fetch_val("SELECT COUNT(*) FROM group_joins WHERE invited_by IS NOT NULL") or 0
+    # UNIKAL USER_ID ALGORITMI: 10 ta qatordan 5 tasi 1 xil user bo'lsa, natija 6 ta chiqadi
+    group_joins_count = await db_fetch_val("SELECT COUNT(DISTINCT user_id) FROM group_joins") or 0
+    referred_joins_count = await db_fetch_val("SELECT COUNT(DISTINCT user_id) FROM group_joins WHERE invited_by IS NOT NULL") or 0
 
     return {
         "total": int(total),
