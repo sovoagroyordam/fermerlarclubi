@@ -1413,8 +1413,12 @@ async def handle_download_csv(request: web.Request):
         headers={"Content-Disposition": 'attachment; filename="custdev_javoblari.csv"'}
     )
 
+async def handle_health(request: web.Request) -> web.Response:
+    return web.Response(text="OK", content_type="text/plain")
+
 def create_admin_app():
     app = web.Application()
+    app.router.add_get("/health", handle_health)
     app.router.add_get("/", handle_index)
     app.router.add_get("/analysis", handle_analysis)
     app.router.add_get("/members", handle_members)
